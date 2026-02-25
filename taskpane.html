@@ -19,13 +19,13 @@
       border-radius: 6px; font-size: 13px; color: #1f2937;
       background: #fff; margin-bottom: 14px; cursor: pointer;
     }
-    .section { 
-      border: 1px solid #e5e7eb; border-radius: 8px; 
+    .section {
+      border: 1px solid #e5e7eb; border-radius: 8px;
       padding: 12px; margin-bottom: 10px; background: #fff;
     }
-    .section-title { 
-      font-size: 11px; font-weight: 700; color: #6b7280; 
-      text-transform: uppercase; margin-bottom: 8px; 
+    .section-title {
+      font-size: 11px; font-weight: 700; color: #6b7280;
+      text-transform: uppercase; margin-bottom: 8px;
     }
     button {
       display: block; width: 100%; padding: 10px;
@@ -39,7 +39,7 @@
     #log {
       margin-top: 12px; padding: 10px; background: #1f2937; color: #d1fae5;
       border-radius: 6px; font-family: monospace; font-size: 11px;
-      min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 280px;
+      min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 300px;
     }
     .err  { color: #fca5a5; }
     .warn { color: #fde68a; }
@@ -62,22 +62,22 @@
 </select>
 
 <div class="section">
-  <div class="section-title">✅ Test 1 — Radi</div>
-  <button id="btnDirect" disabled>Tabela direktno u body</button>
+  <div class="section-title">Test 1 — Tabela direktno u body (radi)</div>
+  <button id="btnDirect" disabled>Ubaci tabelu u body</button>
 </div>
 
 <div class="section">
-  <div class="section-title">🧪 Test 2 — Tabela unutar CC</div>
-  <button id="btnInCC" disabled>Kreiraj CC pa ubaci tabelu</button>
+  <div class="section-title">Test 2 — Kreiraj CC + tabela via getRange()</div>
+  <button id="btnInCC" disabled>Kreiraj CC → ubaci tabelu</button>
 </div>
 
 <div class="section">
-  <div class="section-title">🧪 Test 3 — Nađi CC po tagu</div>
-  <button id="btnFindCC" disabled>Nađi BA_TABLE CC → popuni</button>
+  <div class="section-title">Test 3 — Nađi CC po tagu → popuni</div>
+  <button id="btnFindCC" disabled>Nađi BA_TABLE CC → popuni tabelu</button>
 </div>
 
 <div class="section">
-  <div class="section-title">🔧 Alati</div>
+  <div class="section-title">Alati</div>
   <button id="btnClear" class="danger" disabled>Obriši dokument</button>
   <button id="btnLogClear" class="secondary">Očisti log</button>
 </div>
@@ -99,49 +99,63 @@
     return parseInt(document.getElementById("rowCount").value, 10);
   }
 
-  // --- Test 1: direktno u body (već radi) ---
+  function makeData(n) {
+    const data = [];
+    for (let i = 0; i < n; i++) data.push([String(i), `Red ${i + 1}`, ""]);
+    return data;
+  }
+
+  // -------------------------------------------------------
+  // TEST 1: tabela direktno u body — radi
+  // -------------------------------------------------------
   document.getElementById("btnDirect").onclick = async () => {
     const n = getN();
-    log(`▶ Test 1: tabela ${n}×3 direktno u body...`);
+    log(`▶ Test 1: insertTable(${n}, 3) u body...`);
     try {
       await Word.run(async (ctx) => {
-        const data = [];
-        for (let i = 0; i < n; i++) data.push([String(i), `Red ${i+1}`, ""]);
-        const t = ctx.document.body.insertTable(n, 3, Word.InsertLocation.end, data);
+        const t = ctx.document.body.insertTable(n, 3, Word.InsertLocation.end, makeData(n));
         t.styleBuiltIn = Word.Style.tableGrid;
         await ctx.sync();
-        log(`✅ OK — tabela ${n}×3 ubačena`, "ok");
+        log(`✅ OK`, "ok");
       });
-    } catch(e) { log("❌ " + e.message, "err"); }
+    } catch (e) { log("❌ " + e.message, "err"); }
   };
 
-  // --- Test 2: napravi CC, pa u cc.body ubaci tabelu ---
+  // -------------------------------------------------------
+  // TEST 2: kreiraj CC, pa ubaci tabelu via cc.getRange()
+  // cc.body NE POSTOJI — koristimo cc.getRange(whole)
+  // -------------------------------------------------------
   document.getElementById("btnInCC").onclick = async () => {
     const n = getN();
-    log(`▶ Test 2: kreiram CC, pa ubacujem tabelu ${n}×3 u cc.body...`);
+    log(`▶ Test 2: kreiram CC, pa insertTable via cc.getRange()...`);
     try {
       await Word.run(async (ctx) => {
-        // Korak 1: napravi CC
+        // Napravi CC na kraju dokumenta
         const range = ctx.document.body.getRange(Word.RangeLocation.end);
         const cc = range.insertContentControl();
-        cc.tag   = "BA_TABLE|type=05";
-        cc.title = "Tabela 05";
+        cc.tag        = "BA_TABLE|type=05";
+        cc.title      = "Tabela 05";
         cc.appearance = "BoundingBox";
         await ctx.sync();
         log("  CC kreiran: tag=" + cc.tag);
 
-        // Korak 2: ubaci tabelu u cc.body
-        const data = [];
-        for (let i = 0; i < n; i++) data.push([String(i), `Red ${i+1}`, ""]);
-        const t = cc.body.insertTable(n, 3, Word.InsertLocation.start, data);
+        // Ubaci tabelu KROZ cc.getRange() — ne kroz cc.body!
+        const ccRange = cc.getRange(Word.RangeLocation.content);
+        const t = ccRange.insertTable(n, 3, Word.InsertLocation.replace, makeData(n));
         t.styleBuiltIn = Word.Style.tableGrid;
         await ctx.sync();
-        log(`✅ OK — tabela ${n}×3 ubačena u cc.body`, "ok");
+        log(`✅ OK — tabela ${n}×3 ubačena via cc.getRange()`, "ok");
       });
-    } catch(e) { log("❌ " + e.message, "err"); log("   " + e.stack, "err"); }
+    } catch (e) {
+      log("❌ " + e.message, "err");
+      log("   " + (e.stack || ""), "err");
+    }
   };
 
-  // --- Test 3: nađi postojeći CC po tagu, auto-kreiraj tabelu ako nema ---
+  // -------------------------------------------------------
+  // TEST 3: nađi postojeći CC po tagu, nađi tabelu ili
+  //         kreiraj novu via getRange(), pa popuni redove
+  // -------------------------------------------------------
   document.getElementById("btnFindCC").onclick = async () => {
     const n = getN();
     log(`▶ Test 3: tražim CC sa BA_TABLE tagom...`);
@@ -152,39 +166,45 @@
         await ctx.sync();
 
         log(`  Ukupno CC-a: ${ccs.items.length}`);
-        ccs.items.forEach((cc, i) => log(`  [${i}] tag="${cc.tag || '(prazno)'}"`));
+        ccs.items.forEach((cc, i) => log(`  [${i}] tag="${cc.tag || "(prazno)"}"`));
 
-        const target = ccs.items.find(cc => (cc.tag||"").trim().startsWith("BA_TABLE|"));
+        const target = ccs.items.find(cc => (cc.tag || "").trim().startsWith("BA_TABLE|"));
         if (!target) {
           log("⚠️ Nema CC sa BA_TABLE tagom — pokreni Test 2 prvo", "warn");
           return;
         }
         log(`  Nađen: "${target.tag}"`);
 
-        // Proveri da li ima tabelu
-        const tables = target.body.tables;
+        // Proveri da li CC već sadrži tabelu
+        const ccRange = target.getRange(Word.RangeLocation.content);
+        const tables  = ccRange.tables;
         tables.load("items");
         await ctx.sync();
-        log(`  cc.body.tables.length = ${tables.items.length}`);
+        log(`  tables u CC rangu: ${tables.items.length}`);
 
         let table;
         if (tables.items.length === 0) {
-          log("  Nema tabele → kreiram automatski...", "warn");
-          target.body.clear();
+          // Nema tabele — kreiraj via replace na content range
+          log("  Nema tabele → kreiram via getRange().insertTable()", "warn");
+          const t = ccRange.insertTable(1, 3, Word.InsertLocation.replace, []);
+          t.styleBuiltIn = Word.Style.tableGrid;
           await ctx.sync();
-          table = target.body.insertTable(1, 3, Word.InsertLocation.start, []);
-          table.styleBuiltIn = Word.Style.tableGrid;
+
+          // Reload da dobijem referencu
+          const tables2 = target.getRange(Word.RangeLocation.content).tables;
+          tables2.load("items");
           await ctx.sync();
+          table = tables2.items[0];
           log("  Tabela kreirana (1×3)");
         } else {
-          log("  Koristim postojeću tabelu");
           table = tables.items[0];
+          log("  Koristim postojeću tabelu");
         }
 
-        // Dodaj/uskladi redove
+        // Uskladi broj redova
         table.load("rowCount");
         await ctx.sync();
-        log(`  rowCount = ${table.rowCount}, cilj = ${n}`);
+        log(`  rowCount=${table.rowCount}, cilj=${n}`);
 
         if (table.rowCount < n) {
           for (let i = table.rowCount; i < n; i++) {
@@ -193,17 +213,17 @@
           await ctx.sync();
         }
 
-        // Upiši podatke
+        // Upiši podatke red po red
         table.load("rows/items");
         await ctx.sync();
-        for (let i = 0; i < n; i++) {
-          if (i >= table.rows.items.length) break;
+
+        for (let i = 0; i < n && i < table.rows.items.length; i++) {
           const row = table.rows.items[i];
           row.load("cells/items");
           await ctx.sync();
           const cells = row.cells.items;
-          if (cells[0]) cells[0].body.insertText(String(i), Word.InsertLocation.replace);
-          if (cells[1]) cells[1].body.insertText(`Red ${i+1}`, Word.InsertLocation.replace);
+          if (cells[0]) cells[0].body.insertText(String(i),       Word.InsertLocation.replace);
+          if (cells[1]) cells[1].body.insertText(`Red ${i + 1}`,  Word.InsertLocation.replace);
           if (cells[2]) cells[2].body.clear();
         }
 
@@ -218,12 +238,17 @@
         }
 
         await ctx.sync();
-        log(`✅ OK — tabela popunjena sa ${n} redova`, "ok");
+        log(`✅ OK — tabela popunjena: ${n} redova`, "ok");
       });
-    } catch(e) { log("❌ " + e.message, "err"); log("   " + e.stack, "err"); }
+    } catch (e) {
+      log("❌ " + e.message, "err");
+      log("   " + (e.stack || ""), "err");
+    }
   };
 
-  // --- Alati ---
+  // -------------------------------------------------------
+  // Alati
+  // -------------------------------------------------------
   document.getElementById("btnClear").onclick = async () => {
     log("▶ Brišem dokument...");
     try {
@@ -232,19 +257,21 @@
         await ctx.sync();
         log("✅ Dokument očišćen", "ok");
       });
-    } catch(e) { log("❌ " + e.message, "err"); }
+    } catch (e) { log("❌ " + e.message, "err"); }
   };
 
   document.getElementById("btnLogClear").onclick = () => {
     document.getElementById("log").innerHTML = "";
   };
 
-  // --- Office ready ---
+  // -------------------------------------------------------
+  // Office ready
+  // -------------------------------------------------------
   Office.onReady((info) => {
     log(`✅ Office.onReady — ${info.host} / ${info.platform}`, "ok");
     document.getElementById("status").textContent = `✅ Spreman (${info.host} / ${info.platform})`;
     document.getElementById("status").className = "ready";
-    ["rowCount","btnDirect","btnInCC","btnFindCC","btnClear"].forEach(id => {
+    ["rowCount", "btnDirect", "btnInCC", "btnFindCC", "btnClear"].forEach(id => {
       document.getElementById(id).disabled = false;
     });
   });
