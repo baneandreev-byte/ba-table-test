@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Test tabela</title>
+  <style>
+    body { font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f9fafb; margin: 0; }
+
+    #status {
+      padding: 8px 12px; border-radius: 6px; font-size: 12px;
+      margin-bottom: 16px; background: #fef3c7; color: #92400e;
+      border: 1px solid #fbbf24; text-align: center;
+    }
+    #status.ready { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
+
+    label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+
+    select {
+      width: 100%; padding: 8px 10px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; color: #1f2937;
+      background: #fff; margin-bottom: 16px; cursor: pointer;
+    }
+
+    button {
+      display: block; width: 100%; padding: 11px;
+      background: #1d4ed8; color: #fff; border: none;
+      border-radius: 6px; font-size: 13px; font-weight: 600;
+      cursor: pointer; margin-bottom: 8px;
+    }
+    button:disabled { background: #9ca3af; cursor: not-allowed; }
+    button.danger { background: #dc2626; }
+
+    #log {
+      margin-top: 16px; padding: 10px; background: #1f2937; color: #d1fae5;
+      border-radius: 6px; font-family: monospace; font-size: 11px;
+      min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 300px;
+    }
+    .err  { color: #fca5a5; }
+    .warn { color: #fde68a; }
+  </style>
+</head>
+<body>
+
+<div id="status">⏳ Učitavam Office...</div>
+
+<label for="rowCount">Broj redova:</label>
+<select id="rowCount" disabled>
+  <option value="2">2 reda</option>
+  <option value="3">3 reda</option>
+  <option value="4">4 reda</option>
+  <option value="5" selected>5 redova</option>
+  <option value="6">6 redova</option>
+  <option value="7">7 redova</option>
+  <option value="8">8 redova</option>
+  <option value="9">9 redova</option>
+  <option value="10">10 redova</option>
+</select>
+
+<button id="btnMake" disabled>📋 Napravi tabelu</button>
+<button id="btnClear" class="danger" disabled>🗑️ Obriši dokument</button>
+
+<div id="log"></div>
+
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<script>
+  function log(msg, type) {
+    const d = document.getElementById("log");
+    const line = document.createElement("div");
+    if (type) line.className = type;
+    line.textContent = new Date().toLocaleTimeString() + "  " + msg;
+    d.appendChild(line);
+    d.scrollTop = d.scrollHeight;
+  }
+
+  document.getElementById("btnMake").onclick = async () => {
+    const n = parseInt(document.getElementById("rowCount").value, 10);
+    log(`▶ Pravim tabelu: ${n} redova, 3 kolone...`);
+    try {
+      await Word.run(async (ctx) => {
+        const data = [];
+        for (let i = 0; i < n; i++) {
+          data.push([String(i), `Red ${i + 1}`, ""]);
+        }
+        const table = ctx.document.body.insertTable(
+          n, 3, Word.InsertLocation.end, data
+        );
+        table.styleBuiltIn = Word.Style.tableGrid;
+        await ctx.sync();
+        log(`✅ Tabela napravljena: ${n} × 3`);
+      });
+    } catch (e) {
+      log("❌ " + e.message, "err");
+      log("   " + (e.stack || ""), "err");
+    }
+  };
+
+  document.getElementById("btnClear").onclick = async () => {
+    log("▶ Brišem sadržaj...");
+    try {
+      await Word.run(async (ctx) => {
+        ctx.document.body.clear();
+        await ctx.sync();
+        log("✅ Dokument očišćen");
+      });
+    } catch (e) {
+      log("❌ " + e.message, "err");
+    }
+  };
+
+  Office.onReady((info) => {
+    log(`✅ Office spreman — ${info.host} / ${info.platform}`);
+    document.getElementById("status").textContent = `✅ Spreman (${info.host} / ${info.platform})`;
+    document.getElementById("status").className = "ready";
+    document.getElementById("rowCount").disabled = false;
+    document.getElementById("btnMake").disabled  = false;
+    document.getElementById("btnClear").disabled = false;
+  });
+</script>
+</body>
+</html>

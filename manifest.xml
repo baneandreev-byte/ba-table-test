@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xsi:type="TaskPaneApp">
+
+  <Id>6b3da4fa-0b7d-4dc5-ac08-a2c75a7d5f06</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>BiroA</ProviderName>
+  <DefaultLocale>sr</DefaultLocale>
+  <DisplayName DefaultValue="BA Test Tabela"/>
+  <Description DefaultValue="Test kreiranje tabele u Word-u"/>
+
+  <IconUrl DefaultValue="https://baneandreev-byte.github.io/ba-table-test/icon.png"/>
+  <HighResolutionIconUrl DefaultValue="https://baneandreev-byte.github.io/ba-table-test/icon.png"/>
+  <SupportUrl DefaultValue="https://github.com/baneandreev-byte/ba-table-test"/>
+
+  <Hosts>
+    <Host Name="Document"/>
+  </Hosts>
+
+  <Requirements>
+    <Sets>
+      <Set Name="WordApi" MinVersion="1.3"/>
+    </Sets>
+  </Requirements>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://baneandreev-byte.github.io/ba-table-test/taskpane.html"/>
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+</OfficeApp>
