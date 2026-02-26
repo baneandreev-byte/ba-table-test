@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test tabela - Bookmark v5</title>
+  <title>Test tabela - Bookmark v6</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 16px; background: #f9fafb; margin: 0; }
     #status { padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; text-align: center; }
@@ -34,17 +34,17 @@
 </select>
 
 <div class="section">
-  <div class="section-title">Korak 1 — Postavi bookmark placeholder</div>
-  <div class="hint">
-    Ubacuje vidljivi marker <b>«tabela»</b> i bookmark oko njega.<br>
-    Bookmark mora imati sadržaj — prazan bookmark ne prima <code>replace</code>.
-  </div>
-  <button id="btnStep1" disabled>Ubaci bookmark sa sadržajem</button>
+  <div class="section-title">Korak 1 — Ubaci bookmark placeholder</div>
+  <div class="hint">Ubacuje tekst <b>«tabela»</b> sa bookmarkom. U template korisnik ovo postavi ručno.</div>
+  <button id="btnStep1" disabled>Ubaci bookmark placeholder</button>
 </div>
 
 <div class="section">
   <div class="section-title">Korak 2 — Generiši / Ažuriraj</div>
-  <div class="hint">Nađe bookmark → replace sa tabelom → ponovo postavi bookmark oko tabele.</div>
+  <div class="hint">
+    Nađe bookmark → <b>clear()</b> unutrašnjost → <b>insertTable(start)</b> unutar bookmark range-a.<br>
+    Bookmark ostaje netaknut, samo mu se sadržaj menja.
+  </div>
   <button id="btnStep2" disabled>Generiši / Ažuriraj tabelu</button>
 </div>
 
@@ -71,40 +71,33 @@
 
   function getN() { return parseInt(document.getElementById("rowCount").value, 10); }
 
-  // Svi elementi MORAJU biti String — Word API je striktan
   function makeData(n) {
     const rows = [];
     for (let i = 0; i < n; i++) {
-      rows.push([String(i), String(`Red ${i + 1}`), String("")]);
+      rows.push([String(i), `Red ${i + 1}`, ""]);
     }
     return rows;
   }
 
   // Korak 1: ubaci marker tekst + bookmark oko njega
-  // Bookmark mora imati ne-prazan sadržaj da bi replace radio
   document.getElementById("btnStep1").onclick = async () => {
-    log("▶ Korak 1: ubacujem marker + bookmark...");
+    log("▶ Korak 1: ubacujem bookmark placeholder...");
     try {
       await Word.run(async (ctx) => {
-        // Ubaci marker paragraf na kraj dokumenta
         const p = ctx.document.body.insertParagraph("«tabela»", Word.InsertLocation.end);
         await ctx.sync();
-
-        // Bookmark oko celog teksta paragrafa — ima sadržaj, nije prazan
         p.getRange().insertBookmark(BM_NAME);
         await ctx.sync();
-        log(`✅ Bookmark "${BM_NAME}" postavljen oko teksta "«tabela»"`, "ok");
-        log(`   (bookmark ima sadržaj → replace će raditi)`, "warn");
+        log(`✅ Bookmark "${BM_NAME}" postavljen`, "ok");
       });
     } catch (e) { log("❌ " + e.message, "err"); }
   };
 
-  // Korak 2 = Korak 3: bookmark → tabela(replace) → novi bookmark oko tabele
+  // Korak 2: clear unutrašnjost bookmarksa → insertTable(start)
   async function generateOrUpdateTable() {
     const n = getN();
     const data = makeData(n);
-    log(`▶ Generišem tabelu: ${n} redova, 3 kolone...`);
-    log(`   Primer podataka[0]: [${data[0].map(v => `"${v}"`).join(", ")}]`);
+    log(`▶ Ažuriram unutar bookmarka: ${n} redova...`);
 
     try {
       await Word.run(async (ctx) => {
@@ -118,15 +111,17 @@
         }
         log(`  Bookmark nađen, sadržaj: "${bm.text}"`);
 
-        // Replace — radi samo ako bookmark ima sadržaj (ne prazan)
-        const table = bm.insertTable(n, 3, Word.InsertLocation.replace, data);
-        table.styleBuiltIn = Word.Style.tableGrid;
-
-        // Odmah ponovo postavi bookmark oko cele tabele
-        table.getRange().insertBookmark(BM_NAME);
-
+        // 1. Očisti sadržaj unutar bookmarksa (bookmark ostaje)
+        bm.clear();
         await ctx.sync();
-        log(`✅ Tabela ${n}×3 generisana, bookmark ponovo postavljen`, "ok");
+        log("  Sadržaj bookmarksa očišćen");
+
+        // 2. Ubaci tabelu na start bookmark range-a
+        const table = bm.insertTable(n, 3, Word.InsertLocation.start, data);
+        table.styleBuiltIn = Word.Style.tableGrid;
+        await ctx.sync();
+
+        log(`✅ Tabela ${n}×3 generisana unutar bookmarksa`, "ok");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
