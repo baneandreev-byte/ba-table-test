@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test tabela</title>
+  <title>Test tabela - Bookmark</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 16px; background: #f9fafb; margin: 0; }
     #status {
@@ -26,6 +26,9 @@
     .section-title {
       font-size: 11px; font-weight: 700; color: #6b7280;
       text-transform: uppercase; margin-bottom: 8px;
+    }
+    .hint {
+      font-size: 11px; color: #6b7280; margin-bottom: 8px; line-height: 1.5;
     }
     button {
       display: block; width: 100%; padding: 10px;
@@ -62,18 +65,21 @@
 </select>
 
 <div class="section">
-  <div class="section-title">Test 1 — Tabela direktno u body (radi ✅)</div>
-  <button id="btnDirect" disabled>Ubaci tabelu u body</button>
+  <div class="section-title">Test 1 — Ubaci bookmark u dokument</div>
+  <div class="hint">
+    Ubacuje paragraf sa tekstom <b>BA_TABLE_05</b> i postavlja bookmark
+    istog imena. Posle ovog testa vidiš placeholder u dokumentu.
+  </div>
+  <button id="btnInsertBookmark" disabled>Ubaci bookmark placeholder</button>
 </div>
 
 <div class="section">
-  <div class="section-title">Test 2 — CC via paragraph anchor</div>
-  <button id="btnInCC" disabled>Kreiraj CC → ubaci tabelu</button>
-</div>
-
-<div class="section">
-  <div class="section-title">Test 3 — Nađi CC po tagu → popuni</div>
-  <button id="btnFindCC" disabled>Nađi BA_TABLE CC → popuni tabelu</button>
+  <div class="section-title">Test 2 — Nađi bookmark → zameni tabelom</div>
+  <div class="hint">
+    Traži bookmark <b>BA_TABLE_05</b>, uzima njegov range,
+    i zamenjuje sa tabelom izabranog broja redova.
+  </div>
+  <button id="btnFillBookmark" disabled>Nađi bookmark → ubaci tabelu</button>
 </div>
 
 <div class="section">
@@ -100,58 +106,32 @@
   }
 
   function makeData(n) {
-    const data = [];
-    for (let i = 0; i < n; i++) data.push([String(i), `Red ${i + 1}`, ""]);
-    return data;
+    const rows = [];
+    for (let i = 0; i < n; i++) rows.push([String(i), `Red ${i + 1}`, ""]);
+    return rows;
   }
 
   // -------------------------------------------------------
-  // TEST 1: tabela direktno u body — radi
+  // TEST 1: Ubaci bookmark placeholder u dokument
+  // Simulira ono što bi korisnik postavio u template ručno
   // -------------------------------------------------------
-  document.getElementById("btnDirect").onclick = async () => {
-    const n = getN();
-    log(`▶ Test 1: insertTable(${n}, 3) direktno u body...`);
+  document.getElementById("btnInsertBookmark").onclick = async () => {
+    log("▶ Test 1: ubacujem bookmark BA_TABLE_05...");
     try {
       await Word.run(async (ctx) => {
-        const t = ctx.document.body.insertTable(
-          n, 3, Word.InsertLocation.end, makeData(n)
+        // Ubaci paragraf sa placeholder tekstom
+        const p = ctx.document.body.insertParagraph(
+          "[ BA_TABLE_05 ]", Word.InsertLocation.end
         );
-        t.styleBuiltIn = Word.Style.tableGrid;
         await ctx.sync();
-        log(`✅ OK`, "ok");
-      });
-    } catch (e) { log("❌ " + e.message, "err"); }
-  };
+        log("  Paragraf ubačen");
 
-  // -------------------------------------------------------
-  // TEST 2: CC kreiran oko paragrafa (anchor), pa insertTable
-  // Ključ: paragraf unutar CC daje "gde" da Word zakači tabelu
-  // -------------------------------------------------------
-  document.getElementById("btnInCC").onclick = async () => {
-    const n = getN();
-    log(`▶ Test 2: paragraf → CC oko njega → insertTable na end...`);
-    try {
-      await Word.run(async (ctx) => {
-
-        // Korak 1: napravi paragraf na kraju dokumenta
-        const p = ctx.document.body.insertParagraph("", Word.InsertLocation.end);
+        // Postavi bookmark na taj paragraf
+        const range = p.getRange();
+        range.insertBookmark("BA_TABLE_05");
         await ctx.sync();
-        log("  Paragraf kreiran");
-
-        // Korak 2: CC oko tog paragrafa
-        const cc = p.getRange().insertContentControl();
-        cc.tag        = "BA_TABLE|type=05";
-        cc.title      = "Tabela 05";
-        cc.appearance = "BoundingBox";
-        await ctx.sync();
-        log("  CC kreiran: tag=" + cc.tag);
-
-        // Korak 3: insertTable na END content range-a (ne replace!)
-        const ccRange = cc.getRange(Word.RangeLocation.content);
-        const t = ccRange.insertTable(n, 3, Word.InsertLocation.end, makeData(n));
-        t.styleBuiltIn = Word.Style.tableGrid;
-        await ctx.sync();
-        log(`✅ OK — tabela ${n}×3 ubačena u CC`, "ok");
+        log("✅ Bookmark BA_TABLE_05 postavljen", "ok");
+        log("  (u finalnom template-u korisnik ovo radi ručno: Insert → Bookmark)", "warn");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
@@ -160,94 +140,28 @@
   };
 
   // -------------------------------------------------------
-  // TEST 3: nađi postojeći CC po tagu, proveri/kreiraj tabelu
+  // TEST 2: Nađi bookmark po imenu, zameni sa tabelom
+  // Ovo je glavni mehanizam koji ide u produkcijski plugin
   // -------------------------------------------------------
-  document.getElementById("btnFindCC").onclick = async () => {
+  document.getElementById("btnFillBookmark").onclick = async () => {
     const n = getN();
-    log(`▶ Test 3: tražim CC sa BA_TABLE tagom...`);
+    log(`▶ Test 2: tražim bookmark BA_TABLE_05, zamenjujem sa tabelom ${n}×3...`);
     try {
       await Word.run(async (ctx) => {
-        const ccs = ctx.document.contentControls;
-        ccs.load("items/tag");
+
+        // Korak 1: dohvati range bookmarksa
+        const bmRange = ctx.document.getBookmarkRange("BA_TABLE_05");
+        bmRange.load("text");
         await ctx.sync();
+        log(`  Bookmark nađen, tekst: "${bmRange.text}"`);
 
-        log(`  Ukupno CC-a: ${ccs.items.length}`);
-        ccs.items.forEach((cc, i) => log(`  [${i}] tag="${cc.tag || "(prazno)"}"`));
-
-        const target = ccs.items.find(
-          cc => (cc.tag || "").trim().startsWith("BA_TABLE|")
+        // Korak 2: zameni sadržaj range-a sa tabelom
+        const table = bmRange.insertTable(
+          n, 3, Word.InsertLocation.replace, makeData(n)
         );
-        if (!target) {
-          log("⚠️ Nema CC sa BA_TABLE tagom — pokreni Test 2 prvo", "warn");
-          return;
-        }
-        log(`  Nađen: "${target.tag}"`);
-
-        // Proveri da li CC već sadrži tabelu
-        const ccRange = target.getRange(Word.RangeLocation.content);
-        const tables  = ccRange.tables;
-        tables.load("items");
+        table.styleBuiltIn = Word.Style.tableGrid;
         await ctx.sync();
-        log(`  Tabela count u CC: ${tables.items.length}`);
-
-        let table;
-        if (tables.items.length === 0) {
-          log("  Nema tabele → kreiram via insertTable(end)...", "warn");
-          // anchor paragraf + insertTable na end (ne replace na praznom range)
-          target.insertParagraph("", Word.InsertLocation.end);
-          await ctx.sync();
-          const r2 = target.getRange(Word.RangeLocation.content);
-          const t  = r2.insertTable(1, 3, Word.InsertLocation.end, []);
-          t.styleBuiltIn = Word.Style.tableGrid;
-          await ctx.sync();
-          // reload reference
-          const t2 = target.getRange(Word.RangeLocation.content).tables;
-          t2.load("items");
-          await ctx.sync();
-          table = t2.items[0];
-          log("  Tabela kreirana (1×3)");
-        } else {
-          table = tables.items[0];
-          log("  Koristim postojeću tabelu");
-        }
-
-        // Uskladi broj redova
-        table.load("rowCount");
-        await ctx.sync();
-        log(`  rowCount=${table.rowCount}, cilj=${n}`);
-
-        if (table.rowCount < n) {
-          for (let i = table.rowCount; i < n; i++) {
-            table.addRows(Word.InsertLocation.end, 1);
-          }
-          await ctx.sync();
-        }
-
-        // Upiši podatke
-        table.load("rows/items");
-        await ctx.sync();
-        for (let i = 0; i < n && i < table.rows.items.length; i++) {
-          const row = table.rows.items[i];
-          row.load("cells/items");
-          await ctx.sync();
-          const cells = row.cells.items;
-          if (cells[0]) cells[0].body.insertText(String(i),      Word.InsertLocation.replace);
-          if (cells[1]) cells[1].body.insertText(`Red ${i + 1}`, Word.InsertLocation.replace);
-          if (cells[2]) cells[2].body.clear();
-        }
-
-        // Obriši višak redova
-        if (table.rowCount > n) {
-          table.load("rows/items");
-          await ctx.sync();
-          for (let i = table.rowCount - 1; i >= n; i--) {
-            if (table.rows.items[i]) table.rows.items[i].delete();
-          }
-          await ctx.sync();
-        }
-
-        await ctx.sync();
-        log(`✅ OK — tabela popunjena: ${n} redova`, "ok");
+        log(`✅ OK — tabela ${n}×3 ubačena na mestu bookmarksa`, "ok");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
@@ -280,7 +194,7 @@
     log(`✅ Office.onReady — ${info.host} / ${info.platform}`, "ok");
     document.getElementById("status").textContent = `✅ Spreman (${info.host} / ${info.platform})`;
     document.getElementById("status").className = "ready";
-    ["rowCount", "btnDirect", "btnInCC", "btnFindCC", "btnClear"].forEach(id => {
+    ["rowCount", "btnInsertBookmark", "btnFillBookmark", "btnClear"].forEach(id => {
       document.getElementById(id).disabled = false;
     });
   });
