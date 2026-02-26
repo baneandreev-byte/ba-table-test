@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test tabela - Bookmark v6</title>
+  <title>Test tabela - Hidden Tag</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 16px; background: #f9fafb; margin: 0; }
     #status { padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; text-align: center; }
@@ -34,18 +34,13 @@
 </select>
 
 <div class="section">
-  <div class="section-title">Korak 1 — Ubaci bookmark placeholder</div>
-  <div class="hint">Ubacuje tekst <b>«tabela»</b> sa bookmarkom. U template korisnik ovo postavi ručno.</div>
-  <button id="btnStep1" disabled>Ubaci bookmark placeholder</button>
-</div>
-
-<div class="section">
-  <div class="section-title">Korak 2 — Generiši / Ažuriraj</div>
+  <div class="section-title">Generiši / Ažuriraj tabelu</div>
   <div class="hint">
-    Nađe bookmark → <b>clear()</b> unutrašnjost → <b>insertTable(start)</b> unutar bookmark range-a.<br>
-    Bookmark ostaje netaknut, samo mu se sadržaj menja.
+    Ako tabela ne postoji → kreira novu na kraju dokumenta.<br>
+    Ako tabela već postoji → briše staru, ubacuje novu na istom mestu.<br>
+    ID tag <b>[ID:BA_05]</b> je skriven (bela boja, font 1pt).
   </div>
-  <button id="btnStep2" disabled>Generiši / Ažuriraj tabelu</button>
+  <button id="btnGenerate" disabled>Generiši / Ažuriraj tabelu</button>
 </div>
 
 <div class="section">
@@ -58,7 +53,7 @@
 
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <script>
-  const BM_NAME = "BA_TMP_TABLE_05";
+  const TABLE_ID_TAG = "[ID:BA_05]";
 
   function log(msg, type) {
     const d = document.getElementById("log");
@@ -74,62 +69,97 @@
   function makeData(n) {
     const rows = [];
     for (let i = 0; i < n; i++) {
-      rows.push([String(i), `Red ${i + 1}`, ""]);
+      // ID tag ide u prvu ćeliju prvog reda — samo jednom
+      const col0 = i === 0 ? `${TABLE_ID_TAG} ${i}` : String(i);
+      rows.push([col0, `Red ${i + 1}`, ""]);
     }
     return rows;
   }
 
-  // Korak 1: ubaci marker tekst + bookmark oko njega
-  document.getElementById("btnStep1").onclick = async () => {
-    log("▶ Korak 1: ubacujem bookmark placeholder...");
-    try {
-      await Word.run(async (ctx) => {
-        const p = ctx.document.body.insertParagraph("«tabela»", Word.InsertLocation.end);
-        await ctx.sync();
-        p.getRange().insertBookmark(BM_NAME);
-        await ctx.sync();
-        log(`✅ Bookmark "${BM_NAME}" postavljen`, "ok");
-      });
-    } catch (e) { log("❌ " + e.message, "err"); }
-  };
-
-  // Korak 2: clear unutrašnjost bookmarksa → insertTable(start)
-  async function generateOrUpdateTable() {
+  document.getElementById("btnGenerate").onclick = async () => {
     const n = getN();
     const data = makeData(n);
-    log(`▶ Ažuriram unutar bookmarka: ${n} redova...`);
+    log(`▶ Generiši/ažuriraj tabelu: ${n} redova...`);
+    log(`   data[0]: [${data[0].map(v => `"${v}"`).join(", ")}]`);
 
     try {
       await Word.run(async (ctx) => {
-        const bm = ctx.document.getBookmarkRangeOrNullObject(BM_NAME);
-        bm.load("isNullObject, text");
-        await ctx.sync();
 
-        if (bm.isNullObject) {
-          log("⚠️ Bookmark nije nađen — klikni Korak 1 prvo", "warn");
-          return;
+        // 1. Traži da li tabela već postoji
+        const searchResults = ctx.document.body.search(TABLE_ID_TAG, { matchCase: true });
+        searchResults.load("items");
+        await ctx.sync();
+        log(`  Search za "${TABLE_ID_TAG}": ${searchResults.items.length} rezultata`);
+
+        let targetRange;
+
+        if (searchResults.items.length > 0) {
+          // Tabela postoji — nađi je i obriši
+          log("  🔄 Tabela postoji, ažuriram...");
+          const foundRange = searchResults.items[0];
+          const parentTable = foundRange.parentTable;
+          parentTable.load("isNullObject");
+          await ctx.sync();
+
+          if (parentTable.isNullObject) {
+            log("  ⚠️ parentTable je null — ubacujem na kraj", "warn");
+            targetRange = ctx.document.body.getRange(Word.RangeLocation.end);
+          } else {
+            // Uzmi range posle tabele, pa obriši tabelu
+            targetRange = parentTable.getRange(Word.RangeLocation.after);
+            parentTable.delete();
+            log("  Stara tabela obrisana");
+          }
+
+          await ctx.sync();
+
+          // Ubaci novu tabelu pre tog range-a
+          const newTable = targetRange.insertTable(n, 3, Word.InsertLocation.before, data);
+          newTable.styleBuiltIn = Word.Style.tableGrid;
+          await ctx.sync();
+          log("  Nova tabela ubačena");
+
+          // Sakrij ID tag
+          await hideTag(ctx, newTable);
+
+        } else {
+          // Tabela ne postoji — kreiraj na kraju dokumenta
+          log("  🆕 Tabela ne postoji, kreiram novu...");
+          const newTable = ctx.document.body.insertTable(
+            n, 3, Word.InsertLocation.end, data
+          );
+          newTable.styleBuiltIn = Word.Style.tableGrid;
+          await ctx.sync();
+          log("  Nova tabela ubačena");
+
+          // Sakrij ID tag
+          await hideTag(ctx, newTable);
         }
-        log(`  Bookmark nađen, sadržaj: "${bm.text}"`);
 
-        // 1. Očisti sadržaj unutar bookmarksa (bookmark ostaje)
-        bm.clear();
         await ctx.sync();
-        log("  Sadržaj bookmarksa očišćen");
-
-        // 2. Ubaci tabelu na start bookmark range-a
-        const table = bm.insertTable(n, 3, Word.InsertLocation.start, data);
-        table.styleBuiltIn = Word.Style.tableGrid;
-        await ctx.sync();
-
-        log(`✅ Tabela ${n}×3 generisana unutar bookmarksa`, "ok");
+        log(`✅ Gotovo — tabela ${n}×3`, "ok");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
       log("   " + (e.stack || ""), "err");
     }
-  }
+  };
 
-  document.getElementById("btnStep2").onclick = generateOrUpdateTable;
+  // Sakrij ID tag: bela boja + font 1pt
+  async function hideTag(ctx, table) {
+    const firstCellRange = table.getCell(0, 0).getRange();
+    const tagSearch = firstCellRange.search(TABLE_ID_TAG, { matchCase: true });
+    tagSearch.load("items");
+    await ctx.sync();
+    if (tagSearch.items.length > 0) {
+      tagSearch.items[0].font.color = "white";
+      tagSearch.items[0].font.size = 1;
+      await ctx.sync();
+      log("  ID tag sakriven (bela, 1pt)");
+    } else {
+      log("  ⚠️ ID tag nije nađen u prvoj ćeliji za skrivanje", "warn");
+    }
+  }
 
   document.getElementById("btnClear").onclick = async () => {
     try {
@@ -149,7 +179,7 @@
     log(`✅ Office.onReady — ${info.host} / ${info.platform}`, "ok");
     document.getElementById("status").textContent = `✅ Spreman (${info.host} / ${info.platform})`;
     document.getElementById("status").className = "ready";
-    ["rowCount","btnStep1","btnStep2","btnClear"].forEach(id => {
+    ["rowCount","btnGenerate","btnClear"].forEach(id => {
       document.getElementById(id).disabled = false;
     });
   });
