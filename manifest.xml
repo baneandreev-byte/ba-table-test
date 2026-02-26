@@ -5,7 +5,7 @@
            xsi:type="TaskPaneApp">
 
   <Id>6b3da4fa-0b7d-4dc5-ac08-a2c75a7d5f06</Id>
-  <Version>1.0.0.9</Version>
+  <Version>1.0.0.10</Version>
   <ProviderName>BiroA</ProviderName>
   <DefaultLocale>sr</DefaultLocale>
   <DisplayName DefaultValue="BA Test Tabela"/>
