@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test tabela - Hidden Tag</title>
+  <title>Test tabela - Hidden Tag v2</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 16px; background: #f9fafb; margin: 0; }
     #status { padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; text-align: center; }
@@ -36,9 +36,8 @@
 <div class="section">
   <div class="section-title">Generiši / Ažuriraj tabelu</div>
   <div class="hint">
-    Ako tabela ne postoji → kreira novu na kraju dokumenta.<br>
-    Ako tabela već postoji → briše staru, ubacuje novu na istom mestu.<br>
-    ID tag <b>[ID:BA_05]</b> je skriven (bela boja, font 1pt).
+    Prvo klikni kreira tabelu sa skrivenim ID tagom.<br>
+    Svaki sledeći klik nađe tabelu po tagu i ažurira je.
   </div>
   <button id="btnGenerate" disabled>Generiši / Ažuriraj tabelu</button>
 </div>
@@ -69,97 +68,90 @@
   function makeData(n) {
     const rows = [];
     for (let i = 0; i < n; i++) {
-      // ID tag ide u prvu ćeliju prvog reda — samo jednom
       const col0 = i === 0 ? `${TABLE_ID_TAG} ${i}` : String(i);
       rows.push([col0, `Red ${i + 1}`, ""]);
     }
     return rows;
   }
 
+  // Sakrij ID tag: pretražuje ceo range tabele
+  async function hideTag(ctx, table) {
+    const tableRange = table.getRange();
+    const tagSearch = tableRange.search(TABLE_ID_TAG, { matchCase: true });
+    tagSearch.load("items");
+    await ctx.sync();
+
+    if (tagSearch.items.length > 0) {
+      const match = tagSearch.items[0];
+      match.font.color = "white";
+      match.font.size = 1;
+      match.font.highlightColor = "white";
+      await ctx.sync();
+      log("  ID tag sakriven", "ok");
+    } else {
+      log("  ⚠️ ID tag nije nađen u tabeli", "warn");
+    }
+  }
+
   document.getElementById("btnGenerate").onclick = async () => {
     const n = getN();
     const data = makeData(n);
-    log(`▶ Generiši/ažuriraj tabelu: ${n} redova...`);
-    log(`   data[0]: [${data[0].map(v => `"${v}"`).join(", ")}]`);
+    log(`▶ Generiši/ažuriraj: ${n} redova...`);
 
     try {
       await Word.run(async (ctx) => {
 
-        // 1. Traži da li tabela već postoji
+        // 1. Traži postojeću tabelu po ID tagu
         const searchResults = ctx.document.body.search(TABLE_ID_TAG, { matchCase: true });
         searchResults.load("items");
         await ctx.sync();
-        log(`  Search za "${TABLE_ID_TAG}": ${searchResults.items.length} rezultata`);
-
-        let targetRange;
+        log(`  Search "${TABLE_ID_TAG}": ${searchResults.items.length} rezultata`);
 
         if (searchResults.items.length > 0) {
-          // Tabela postoji — nađi je i obriši
-          log("  🔄 Tabela postoji, ažuriram...");
-          const foundRange = searchResults.items[0];
+          // Tabela postoji — nađi parentTable, uzmi range posle nje, obriši je
+          log("  🔄 Ažuriram postojeću tabelu...");
+          const foundRange  = searchResults.items[0];
           const parentTable = foundRange.parentTable;
           parentTable.load("isNullObject");
           await ctx.sync();
 
           if (parentTable.isNullObject) {
-            log("  ⚠️ parentTable je null — ubacujem na kraj", "warn");
-            targetRange = ctx.document.body.getRange(Word.RangeLocation.end);
+            log("  ⚠️ parentTable null — ubacujem na kraj", "warn");
+            const t = ctx.document.body.insertTable(n, 3, Word.InsertLocation.end, data);
+            t.styleBuiltIn = Word.Style.tableGrid;
+            await ctx.sync();
+            await hideTag(ctx, t);
           } else {
-            // Uzmi range posle tabele, pa obriši tabelu
-            targetRange = parentTable.getRange(Word.RangeLocation.after);
+            const afterRange = parentTable.getRange(Word.RangeLocation.after);
             parentTable.delete();
+            await ctx.sync();
             log("  Stara tabela obrisana");
+
+            const t = afterRange.insertTable(n, 3, Word.InsertLocation.before, data);
+            t.styleBuiltIn = Word.Style.tableGrid;
+            await ctx.sync();
+            log("  Nova tabela ubačena");
+            await hideTag(ctx, t);
           }
 
-          await ctx.sync();
-
-          // Ubaci novu tabelu pre tog range-a
-          const newTable = targetRange.insertTable(n, 3, Word.InsertLocation.before, data);
-          newTable.styleBuiltIn = Word.Style.tableGrid;
-          await ctx.sync();
-          log("  Nova tabela ubačena");
-
-          // Sakrij ID tag
-          await hideTag(ctx, newTable);
-
         } else {
-          // Tabela ne postoji — kreiraj na kraju dokumenta
-          log("  🆕 Tabela ne postoji, kreiram novu...");
-          const newTable = ctx.document.body.insertTable(
-            n, 3, Word.InsertLocation.end, data
-          );
-          newTable.styleBuiltIn = Word.Style.tableGrid;
+          // Tabela ne postoji — kreiraj na kraju
+          log("  🆕 Kreiram novu tabelu...");
+          const t = ctx.document.body.insertTable(n, 3, Word.InsertLocation.end, data);
+          t.styleBuiltIn = Word.Style.tableGrid;
           await ctx.sync();
-          log("  Nova tabela ubačena");
-
-          // Sakrij ID tag
-          await hideTag(ctx, newTable);
+          log("  Tabela ubačena");
+          await hideTag(ctx, t);
         }
 
         await ctx.sync();
-        log(`✅ Gotovo — tabela ${n}×3`, "ok");
+        log(`✅ Gotovo — ${n} redova`, "ok");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
       log("   " + (e.stack || ""), "err");
     }
   };
-
-  // Sakrij ID tag: bela boja + font 1pt
-  async function hideTag(ctx, table) {
-    const firstCellRange = table.getCell(0, 0).getRange();
-    const tagSearch = firstCellRange.search(TABLE_ID_TAG, { matchCase: true });
-    tagSearch.load("items");
-    await ctx.sync();
-    if (tagSearch.items.length > 0) {
-      tagSearch.items[0].font.color = "white";
-      tagSearch.items[0].font.size = 1;
-      await ctx.sync();
-      log("  ID tag sakriven (bela, 1pt)");
-    } else {
-      log("  ⚠️ ID tag nije nađen u prvoj ćeliji za skrivanje", "warn");
-    }
-  }
 
   document.getElementById("btnClear").onclick = async () => {
     try {
