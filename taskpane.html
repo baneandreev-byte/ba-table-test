@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test tabela - Bookmark</title>
+  <title>Test tabela - Bookmark → CC</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 16px; background: #f9fafb; margin: 0; }
     #status {
@@ -23,13 +23,8 @@
       border: 1px solid #e5e7eb; border-radius: 8px;
       padding: 12px; margin-bottom: 10px; background: #fff;
     }
-    .section-title {
-      font-size: 11px; font-weight: 700; color: #6b7280;
-      text-transform: uppercase; margin-bottom: 8px;
-    }
-    .hint {
-      font-size: 11px; color: #6b7280; margin-bottom: 8px; line-height: 1.5;
-    }
+    .section-title { font-size: 11px; font-weight: 700; color: #6b7280; text-transform: uppercase; margin-bottom: 6px; }
+    .hint { font-size: 11px; color: #6b7280; margin-bottom: 8px; line-height: 1.5; }
     button {
       display: block; width: 100%; padding: 10px;
       background: #1d4ed8; color: #fff; border: none;
@@ -42,7 +37,7 @@
     #log {
       margin-top: 12px; padding: 10px; background: #1f2937; color: #d1fae5;
       border-radius: 6px; font-family: monospace; font-size: 11px;
-      min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 300px;
+      min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 320px;
     }
     .err  { color: #fca5a5; }
     .warn { color: #fde68a; }
@@ -65,21 +60,28 @@
 </select>
 
 <div class="section">
-  <div class="section-title">Test 1 — Ubaci bookmark u dokument</div>
+  <div class="section-title">Korak 1 — Postavi bookmark placeholder</div>
   <div class="hint">
-    Ubacuje paragraf sa tekstom <b>BA_TABLE_05</b> i postavlja bookmark
-    istog imena. Posle ovog testa vidiš placeholder u dokumentu.
+    Ubacuje prazan paragraf sa bookmarkom <b>BA_TMP_TABLE_05</b>.<br>
+    U produkciji korisnik ovo postavi ručno u template.
   </div>
-  <button id="btnInsertBookmark" disabled>Ubaci bookmark placeholder</button>
+  <button id="btnStep1" disabled>Ubaci bookmark placeholder</button>
 </div>
 
 <div class="section">
-  <div class="section-title">Test 2 — Nađi bookmark → zameni tabelom</div>
+  <div class="section-title">Korak 2 — Generiši tabelu</div>
   <div class="hint">
-    Traži bookmark <b>BA_TABLE_05</b>, uzima njegov range,
-    i zamenjuje sa tabelom izabranog broja redova.
+    Nađe bookmark → <b>insertTable(replace)</b> → obavije CC-om → obriše bookmark.
   </div>
-  <button id="btnFillBookmark" disabled>Nađi bookmark → ubaci tabelu</button>
+  <button id="btnStep2" disabled>Bookmark → tabela → CC</button>
+</div>
+
+<div class="section">
+  <div class="section-title">Korak 3 — Regeneriši (nađi CC → ažuriraj)</div>
+  <div class="hint">
+    Nađe postojeći CC po tagu <b>BA_TABLE|type=05</b> → ažurira broj redova.
+  </div>
+  <button id="btnStep3" disabled>Nađi CC → ažuriraj tabelu</button>
 </div>
 
 <div class="section">
@@ -101,9 +103,7 @@
     d.scrollTop = d.scrollHeight;
   }
 
-  function getN() {
-    return parseInt(document.getElementById("rowCount").value, 10);
-  }
+  function getN() { return parseInt(document.getElementById("rowCount").value, 10); }
 
   function makeData(n) {
     const rows = [];
@@ -112,26 +112,56 @@
   }
 
   // -------------------------------------------------------
-  // TEST 1: Ubaci bookmark placeholder u dokument
-  // Simulira ono što bi korisnik postavio u template ručno
+  // KORAK 1: Ubaci bookmark placeholder
+  // (simulira ono što korisnik ručno postavi u template)
   // -------------------------------------------------------
-  document.getElementById("btnInsertBookmark").onclick = async () => {
-    log("▶ Test 1: ubacujem bookmark BA_TABLE_05...");
+  document.getElementById("btnStep1").onclick = async () => {
+    log("▶ Korak 1: ubacujem bookmark placeholder...");
     try {
       await Word.run(async (ctx) => {
-        // Ubaci paragraf sa placeholder tekstom
-        const p = ctx.document.body.insertParagraph(
-          "[ BA_TABLE_05 ]", Word.InsertLocation.end
-        );
+        // Prazan paragraf + bookmark = stabilna insertion tačka
+        const p = ctx.document.body.insertParagraph("", Word.InsertLocation.end);
         await ctx.sync();
-        log("  Paragraf ubačen");
+        p.getRange().insertBookmark("BA_TMP_TABLE_05");
+        await ctx.sync();
+        log("✅ Bookmark BA_TMP_TABLE_05 postavljen", "ok");
+      });
+    } catch (e) { log("❌ " + e.message, "err"); }
+  };
 
-        // Postavi bookmark na taj paragraf
-        const range = p.getRange();
-        range.insertBookmark("BA_TABLE_05");
+  // -------------------------------------------------------
+  // KORAK 2: Bookmark → insertTable(replace) → CC → delete bookmark
+  // -------------------------------------------------------
+  document.getElementById("btnStep2").onclick = async () => {
+    const n = getN();
+    log(`▶ Korak 2: bookmark → tabela ${n}×3 → CC...`);
+    try {
+      await Word.run(async (ctx) => {
+
+        // 1) Nađi bookmark range
+        const bm = ctx.document.getBookmarkRange("BA_TMP_TABLE_05");
         await ctx.sync();
-        log("✅ Bookmark BA_TABLE_05 postavljen", "ok");
-        log("  (u finalnom template-u korisnik ovo radi ručno: Insert → Bookmark)", "warn");
+        log("  Bookmark nađen");
+
+        // 2) Ubaci tabelu na mestu bookmarksa
+        const table = bm.insertTable(n, 3, Word.InsertLocation.replace, makeData(n));
+        table.styleBuiltIn = Word.Style.tableGrid;
+        await ctx.sync();
+        log(`  Tabela ${n}×3 ubačena`);
+
+        // 3) Obavi tabelu CC-om sa BA_TABLE tagom
+        const tableRange = table.getRange();
+        const cc = tableRange.insertContentControl();
+        cc.tag        = "BA_TABLE|type=05";
+        cc.title      = "Tabela 05";
+        cc.appearance = "BoundingBox";
+        await ctx.sync();
+        log("  CC omotan oko tabele: tag=" + cc.tag);
+
+        // 4) Obriši privremeni bookmark
+        ctx.document.deleteBookmark("BA_TMP_TABLE_05");
+        await ctx.sync();
+        log("✅ Korak 2 OK — tabela generisana i obmotan CC", "ok");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
@@ -140,28 +170,76 @@
   };
 
   // -------------------------------------------------------
-  // TEST 2: Nađi bookmark po imenu, zameni sa tabelom
-  // Ovo je glavni mehanizam koji ide u produkcijski plugin
+  // KORAK 3: Nađi CC po tagu → ažuriraj tabelu
+  // (regeneracija bez bookmarksa)
   // -------------------------------------------------------
-  document.getElementById("btnFillBookmark").onclick = async () => {
+  document.getElementById("btnStep3").onclick = async () => {
     const n = getN();
-    log(`▶ Test 2: tražim bookmark BA_TABLE_05, zamenjujem sa tabelom ${n}×3...`);
+    log(`▶ Korak 3: tražim CC BA_TABLE|type=05 → ažuriram na ${n} redova...`);
     try {
       await Word.run(async (ctx) => {
-
-        // Korak 1: dohvati range bookmarksa
-        const bmRange = ctx.document.getBookmarkRange("BA_TABLE_05");
-        bmRange.load("text");
+        const ccs = ctx.document.contentControls;
+        ccs.load("items/tag");
         await ctx.sync();
-        log(`  Bookmark nađen, tekst: "${bmRange.text}"`);
 
-        // Korak 2: zameni sadržaj range-a sa tabelom
-        const table = bmRange.insertTable(
-          n, 3, Word.InsertLocation.replace, makeData(n)
-        );
-        table.styleBuiltIn = Word.Style.tableGrid;
+        const target = ccs.items.find(cc => (cc.tag || "").trim() === "BA_TABLE|type=05");
+        if (!target) {
+          log("⚠️ CC sa tagom BA_TABLE|type=05 nije nađen", "warn");
+          return;
+        }
+        log(`  CC nađen: "${target.tag}"`);
+
+        // Nađi tabelu unutar CC range-a
+        const ccRange = target.getRange(Word.RangeLocation.content);
+        const tables  = ccRange.tables;
+        tables.load("items");
         await ctx.sync();
-        log(`✅ OK — tabela ${n}×3 ubačena na mestu bookmarksa`, "ok");
+        log(`  Tabela count: ${tables.items.length}`);
+
+        if (tables.items.length === 0) {
+          log("⚠️ Nema tabele u CC — pokreni Korak 2 prvo", "warn");
+          return;
+        }
+
+        const table = tables.items[0];
+        table.load("rowCount");
+        await ctx.sync();
+        log(`  Trenutno redova: ${table.rowCount}, cilj: ${n}`);
+
+        // Dodaj redove ako treba
+        if (table.rowCount < n) {
+          for (let i = table.rowCount; i < n; i++) {
+            table.addRows(Word.InsertLocation.end, 1);
+          }
+          await ctx.sync();
+        }
+
+        // Reload i upiši podatke
+        table.load("rows/items");
+        await ctx.sync();
+
+        for (let i = 0; i < n && i < table.rows.items.length; i++) {
+          const row = table.rows.items[i];
+          row.load("cells/items");
+          await ctx.sync();
+          const cells = row.cells.items;
+          if (cells[0]) cells[0].body.insertText(String(i),      Word.InsertLocation.replace);
+          if (cells[1]) cells[1].body.insertText(`Red ${i + 1}`, Word.InsertLocation.replace);
+          if (cells[2]) cells[2].body.clear();
+        }
+
+        // Obriši višak redova
+        if (table.rowCount > n) {
+          table.load("rows/items");
+          await ctx.sync();
+          for (let i = table.rowCount - 1; i >= n; i--) {
+            if (table.rows.items[i]) table.rows.items[i].delete();
+          }
+          await ctx.sync();
+        }
+
+        await ctx.sync();
+        log(`✅ Korak 3 OK — tabela ažurirana: ${n} redova`, "ok");
       });
     } catch (e) {
       log("❌ " + e.message, "err");
@@ -173,7 +251,6 @@
   // Alati
   // -------------------------------------------------------
   document.getElementById("btnClear").onclick = async () => {
-    log("▶ Brišem dokument...");
     try {
       await Word.run(async (ctx) => {
         ctx.document.body.clear();
@@ -194,7 +271,7 @@
     log(`✅ Office.onReady — ${info.host} / ${info.platform}`, "ok");
     document.getElementById("status").textContent = `✅ Spreman (${info.host} / ${info.platform})`;
     document.getElementById("status").className = "ready";
-    ["rowCount", "btnInsertBookmark", "btnFillBookmark", "btnClear"].forEach(id => {
+    ["rowCount","btnStep1","btnStep2","btnStep3","btnClear"].forEach(id => {
       document.getElementById(id).disabled = false;
     });
   });
