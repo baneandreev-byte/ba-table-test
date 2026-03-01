@@ -132,7 +132,7 @@ document.getElementById("btnInsertMarker").onclick = async () => {
       const cc = sel.insertContentControl();
       cc.tag = CC_TAG;
       cc.title = CC_TITLE;
-      cc.appearance = Word.ContentControlAppearance.hidden;
+      cc.appearance = Word.ContentControlAppearance.tags;
 
       await ctx.sync();
       log(`✅ CC marker ubačen — tag: "${CC_TAG}"`, "ok");
@@ -236,7 +236,7 @@ async function createTable(ctx, anchorCC, data, n) {
   const tblCC = newTable.getRange().insertContentControl();
   tblCC.tag = CC_TAG_TBL;
   tblCC.title = CC_TITLE_TBL;
-  tblCC.appearance = Word.ContentControlAppearance.hidden;
+  tblCC.appearance = Word.ContentControlAppearance.tags;
   tblCC.cannotDelete = true;
 
   await ctx.sync();
