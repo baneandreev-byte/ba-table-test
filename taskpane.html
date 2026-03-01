@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Test tabela - Hidden Tag v2</title>
+  <title>Test tabela - CC Tag</title>
   <style>
     body { font-family: 'Segoe UI', sans-serif; padding: 16px; background: #f9fafb; margin: 0; }
     #status { padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-bottom: 14px; background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; text-align: center; }
@@ -18,7 +18,7 @@
     button:disabled { background: #9ca3af; cursor: not-allowed; }
     button.secondary { background: #6b7280; }
     button.danger { background: #dc2626; }
-    #log { margin-top: 12px; padding: 10px; background: #1f2937; color: #d1fae5; border-radius: 6px; font-family: monospace; font-size: 11px; min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 320px; }
+    #log { margin-top: 12px; padding: 10px; background: #1f2937; color: #d1fae5; border-radius: 6px; font-family: monospace; font-size: 11px; min-height: 80px; white-space: pre-wrap; overflow-y: auto; max-height: 380px; }
     .err { color: #fca5a5; } .warn { color: #fde68a; } .ok { color: #6ee7b7; }
   </style>
 </head>
@@ -26,155 +26,354 @@
 
 <div id="status">⏳ Učitavam Office...</div>
 
-<label for="rowCount">Broj redova:</label>
+<label for="rowCount">Broj redova podataka:</label>
 <select id="rowCount" disabled>
-  <option value="2">2</option><option value="3">3</option><option value="4">4</option>
-  <option value="5" selected>5</option><option value="6">6</option>
-  <option value="8">8</option><option value="10">10</option>
+  <option value="2">2</option>
+  <option value="3">3</option>
+  <option value="4">4</option>
+  <option value="5" selected>5</option>
+  <option value="6">6</option>
+  <option value="8">8</option>
+  <option value="10">10</option>
 </select>
 
 <div class="section">
-  <div class="section-title">Generiši / Ažuriraj tabelu</div>
+  <div class="section-title">Korak 1 — Postavi CC marker</div>
   <div class="hint">
-    Prvo klikni kreira tabelu sa skrivenim ID tagom.<br>
-    Svaki sledeći klik nađe tabelu po tagu i ažurira je.
+    Klikni u dokument gde želiš tabelu, pa klikni dugme.<br>
+    Ubacuje hidden, locked Content Control kao marker.<br>
+    Ovo se radi jednom pri pripremi šablona.
   </div>
-  <button id="btnGenerate" disabled>Generiši / Ažuriraj tabelu</button>
+  <button type="button" id="btnInsertMarker" disabled>Ubaci CC marker (BA_04)</button>
+</div>
+
+<div class="section">
+  <div class="section-title">Korak 2 — Generiši / Ažuriraj tabelu</div>
+  <div class="hint">
+    Pronalazi CC marker, pa tabelu odmah ispod njega.<br>
+    Ako tabela ne postoji — kreira je sa zaglavljem.<br>
+    Ako postoji — ažurira broj redova i sadržaj bez brisanja.
+  </div>
+  <button type="button" id="btnGenerate" disabled>Generiši / Ažuriraj tabelu</button>
 </div>
 
 <div class="section">
   <div class="section-title">Alati</div>
-  <button id="btnClear" class="danger" disabled>Obriši dokument</button>
-  <button id="btnLogClear" class="secondary">Očisti log</button>
+  <button type="button" id="btnInspect" class="secondary" disabled>Inspect — prikaži CC markere</button>
+  <button type="button" id="btnClear" class="danger" disabled>Obriši dokument</button>
+  <button type="button" id="btnLogClear" class="secondary">Očisti log</button>
 </div>
 
 <div id="log"></div>
 
 <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
 <script>
-  const TABLE_ID_TAG = "[ID:BA_05]";
 
-  function log(msg, type) {
-    const d = document.getElementById("log");
-    const line = document.createElement("div");
-    if (type) line.className = type;
-    line.textContent = new Date().toLocaleTimeString() + "  " + msg;
-    d.appendChild(line);
-    d.scrollTop = d.scrollHeight;
+const CC_TAG     = "BA_04";
+const CC_TAG_TBL = "BA_04_TBL";
+const CC_TITLE   = "[BA:04]";
+const CC_TITLE_TBL = "[BA:04:TBL]";
+const HEADERS    = ["#", "Naziv", "Vrednost"];
+const COLS       = HEADERS.length;
+
+let officeReady = false;
+const ACTION_BTNS = ["btnInsertMarker", "btnGenerate", "btnInspect", "btnClear"];
+
+// ---- Log helper ----
+function log(msg, type) {
+  const d = document.getElementById("log");
+  const line = document.createElement("div");
+  if (type) line.className = type;
+  line.textContent = new Date().toLocaleTimeString() + "  " + msg;
+  d.appendChild(line);
+  d.scrollTop = d.scrollHeight;
+}
+
+function getN() {
+  return parseInt(document.getElementById("rowCount").value, 10);
+}
+
+// ---- Disable/enable buttons tokom async operacija ----
+function setLoading(loading) {
+  const disabled = loading || !officeReady;
+  ACTION_BTNS.forEach(id => { document.getElementById(id).disabled = disabled; });
+  document.getElementById("rowCount").disabled = disabled;
+}
+
+// ---- Generiši test podatke ----
+function makeData(n) {
+  const rows = [];
+  for (let i = 0; i < n; i++) {
+    rows.push([`${i + 1}`, `Red ${i + 1}`, `Vrednost ${i + 1}`]);
   }
+  return rows;
+}
 
-  function getN() { return parseInt(document.getElementById("rowCount").value, 10); }
+// ============================================
+// KORAK 1: Ubaci CC marker na poziciju kursora
+// ============================================
+document.getElementById("btnInsertMarker").onclick = async () => {
+  log("▶ Ubacujem CC marker...");
+  setLoading(true);
+  try {
+    await Word.run(async (ctx) => {
 
-  function makeData(n) {
-    const rows = [];
-    for (let i = 0; i < n; i++) {
-      const col0 = i === 0 ? `${TABLE_ID_TAG} ${i}` : String(i);
-      rows.push([col0, `Red ${i + 1}`, ""]);
-    }
-    return rows;
-  }
-
-  // Sakrij ID tag: pretražuje ceo range tabele
-  async function hideTag(ctx, table) {
-    const tableRange = table.getRange();
-    const tagSearch = tableRange.search(TABLE_ID_TAG, { matchCase: true });
-    tagSearch.load("items");
-    await ctx.sync();
-
-    if (tagSearch.items.length > 0) {
-      const match = tagSearch.items[0];
-      match.font.color = "white";
-      match.font.size = 1;
-      match.font.highlightColor = "white";
+      const existing = ctx.document.contentControls.getByTag(CC_TAG);
+      existing.load("items");
       await ctx.sync();
-      log("  ID tag sakriven", "ok");
-    } else {
-      log("  ⚠️ ID tag nije nađen u tabeli", "warn");
+
+      if (existing.items.length > 0) {
+        log("⚠️ CC marker već postoji u dokumentu!", "warn");
+        log("   Koristi direktno Korak 2 za ažuriranje tabele.", "warn");
+        return;
+      }
+
+      const sel = ctx.document.getSelection();
+      const cc = sel.insertContentControl();
+      cc.tag = CC_TAG;
+      cc.title = CC_TITLE;
+      cc.appearance = Word.ContentControlAppearance.hidden;
+      cc.cannotDelete = true;
+      cc.cannotEdit = true;
+      cc.insertText("", Word.InsertLocation.replace);
+
+      await ctx.sync();
+      log(`✅ CC marker ubačen — tag: "${CC_TAG}"`, "ok");
+      log("   Hidden i locked. Sada klikni Generiši.", "ok");
+    });
+  } catch (e) {
+    log("❌ " + e.message, "err");
+  } finally {
+    setLoading(false);
+  }
+};
+
+// ============================================
+// KORAK 2: Generiši / Ažuriraj tabelu
+// ============================================
+document.getElementById("btnGenerate").onclick = async () => {
+  const n = getN();
+  const data = makeData(n);
+  log(`▶ Generiši/ažuriraj tabelu (${n} redova podataka)...`);
+  setLoading(true);
+
+  try {
+    await Word.run(async (ctx) => {
+
+      // 1. Nađi anchor CC marker
+      const ccs = ctx.document.contentControls.getByTag(CC_TAG);
+      ccs.load("items");
+      await ctx.sync();
+
+      if (ccs.items.length === 0) {
+        log("❌ CC marker nije nađen! Najpre ubaci marker (Korak 1).", "err");
+        return;
+      }
+
+      const cc = ccs.items[0];
+      log("  ✅ CC anchor marker nađen", "ok");
+
+      // 2. Nađi CC wrapper tabele (BA_04_TBL) — pouzdanije od afterRange.tables
+      const tblCCs = ctx.document.contentControls.getByTag(CC_TAG_TBL);
+      tblCCs.load("items");
+      await ctx.sync();
+
+      if (tblCCs.items.length > 0) {
+        // Tabela postoji — ažuriraj bez brisanja
+        log("  🔄 Ažuriram postojeću tabelu...");
+        const tblCC = tblCCs.items[0];
+        const tables = tblCC.tables;
+        tables.load("items");
+        await ctx.sync();
+
+        if (tables.items.length === 0) {
+          log("⚠️ CC wrapper nađen ali tabela unutra nedostaje. Rekreiram...", "warn");
+          tblCC.delete(false);
+          await ctx.sync();
+          await createTable(ctx, cc, data, n);
+        } else {
+          const tbl = tables.items[0];
+          tbl.load("rowCount");
+          await ctx.sync();
+          log(`     Trenutno redova: ${tbl.rowCount} (uklj. zaglavlje), cilj: ${n + 1}`);
+          await updateTable(ctx, tbl, data, n);
+        }
+      } else {
+        // Tabela ne postoji — kreiraj
+        log("  🆕 Kreiram novu tabelu...");
+        await createTable(ctx, cc, data, n);
+      }
+
+      await ctx.sync();
+      log("✅ Gotovo!", "ok");
+    });
+
+  } catch (e) {
+    log("❌ " + e.message, "err");
+    log("   " + (e.stack || ""), "err");
+  } finally {
+    setLoading(false);
+  }
+};
+
+// ============================================
+// CREATE tabele sa zaglavljem
+// ============================================
+async function createTable(ctx, anchorCC, data, n) {
+  const allRows = [HEADERS, ...data];
+  const insertRange = anchorCC.getRange(Word.RangeLocation.after);
+  const newTable = insertRange.insertTable(n + 1, COLS, Word.InsertLocation.start, allRows);
+  newTable.styleBuiltIn = Word.Style.tableGrid;
+
+  // Stilizuj zaglavlje
+  const headerRow = newTable.getRow(0);
+  headerRow.shadingColor = "#1d4ed8";
+  headerRow.font.color = "#ffffff";
+  headerRow.font.bold = true;
+
+  await ctx.sync();
+
+  // Wrap tabele u CC — jedini pouzdan način za pronalaženje pri sledećem pozivu
+  const tblCC = newTable.getRange().insertContentControl();
+  tblCC.tag = CC_TAG_TBL;
+  tblCC.title = CC_TITLE_TBL;
+  tblCC.appearance = Word.ContentControlAppearance.hidden;
+  tblCC.cannotDelete = true;
+
+  await ctx.sync();
+  log(`  ✅ Tabela kreirana (zaglavlje + ${n} redova podataka)`, "ok");
+}
+
+// ============================================
+// UPDATE tabele — bez brisanja tabele
+// ============================================
+async function updateTable(ctx, table, data, targetDataRows) {
+  const targetTotalRows = targetDataRows + 1; // +1 za zaglavlje (red 0)
+
+  table.load("rowCount");
+  await ctx.sync();
+  const currentTotalRows = table.rowCount;
+
+  // Učitaj sve redove odjednom
+  table.load("rows/items");
+  await ctx.sync();
+
+  // Učitaj sve ćelije za data redove odjednom (red 0 = zaglavlje, preskačemo)
+  const dataRowsToFill = Math.min(currentTotalRows - 1, targetDataRows);
+  for (let i = 1; i <= dataRowsToFill; i++) {
+    table.rows.items[i].load("cells/items");
+  }
+  await ctx.sync();
+
+  // Ažuriraj sve ćelije — jedan sync na kraju, bez sync u petlji
+  for (let i = 1; i <= dataRowsToFill; i++) {
+    const dataIdx = i - 1;
+    for (let c = 0; c < COLS; c++) {
+      const cell = table.rows.items[i].cells.items[c];
+      if (!cell) continue;
+      cell.body.clear();
+      const val = data[dataIdx] && data[dataIdx][c] != null ? String(data[dataIdx][c]) : "";
+      if (val) cell.body.insertText(val, Word.InsertLocation.start);
     }
   }
+  await ctx.sync();
+  log(`     Ažurirano ${dataRowsToFill} postojećih data redova`);
 
-  document.getElementById("btnGenerate").onclick = async () => {
-    const n = getN();
-    const data = makeData(n);
-    log(`▶ Generiši/ažuriraj: ${n} redova...`);
-
-    try {
-      await Word.run(async (ctx) => {
-
-        // 1. Traži postojeću tabelu po ID tagu
-        const searchResults = ctx.document.body.search(TABLE_ID_TAG, { matchCase: true });
-        searchResults.load("items");
-        await ctx.sync();
-        log(`  Search "${TABLE_ID_TAG}": ${searchResults.items.length} rezultata`);
-
-        if (searchResults.items.length > 0) {
-          // Tabela postoji — nađi parentTable, uzmi range posle nje, obriši je
-          log("  🔄 Ažuriram postojeću tabelu...");
-          const foundRange  = searchResults.items[0];
-          const parentTable = foundRange.parentTable;
-          parentTable.load("isNullObject");
-          await ctx.sync();
-
-          if (parentTable.isNullObject) {
-            log("  ⚠️ parentTable null — ubacujem na kraj", "warn");
-            const t = ctx.document.body.insertTable(n, 3, Word.InsertLocation.end, data);
-            t.styleBuiltIn = Word.Style.tableGrid;
-            await ctx.sync();
-            await hideTag(ctx, t);
-          } else {
-            const afterRange = parentTable.getRange(Word.RangeLocation.after);
-            parentTable.delete();
-            await ctx.sync();
-            log("  Stara tabela obrisana");
-
-            const t = afterRange.insertTable(n, 3, Word.InsertLocation.before, data);
-            t.styleBuiltIn = Word.Style.tableGrid;
-            await ctx.sync();
-            log("  Nova tabela ubačena");
-            await hideTag(ctx, t);
-          }
-
-        } else {
-          // Tabela ne postoji — kreiraj na kraju
-          log("  🆕 Kreiram novu tabelu...");
-          const t = ctx.document.body.insertTable(n, 3, Word.InsertLocation.end, data);
-          t.styleBuiltIn = Word.Style.tableGrid;
-          await ctx.sync();
-          log("  Tabela ubačena");
-          await hideTag(ctx, t);
-        }
-
-        await ctx.sync();
-        log(`✅ Gotovo — ${n} redova`, "ok");
-      });
-    } catch (e) {
-      log("❌ " + e.message, "err");
-      log("   " + (e.stack || ""), "err");
+  // Dodaj redove ako treba više — batch poziv (jedan API poziv umesto petlje)
+  if (targetTotalRows > currentTotalRows) {
+    const toAdd = targetTotalRows - currentTotalRows;
+    const newRowsData = [];
+    for (let i = currentTotalRows - 1; i < targetDataRows; i++) {
+      newRowsData.push(
+        data[i] ? data[i].map(v => (v != null ? String(v) : "")) : Array(COLS).fill("")
+      );
     }
-  };
+    table.addRows(Word.InsertLocation.end, toAdd, newRowsData);
+    await ctx.sync();
+    log(`     Dodato ${toAdd} novih redova`, "ok");
+  }
 
-  document.getElementById("btnClear").onclick = async () => {
-    try {
-      await Word.run(async (ctx) => {
-        ctx.document.body.clear();
-        await ctx.sync();
-        log("✅ Dokument očišćen", "ok");
+  // Obriši višak redova odozdo (nikad ne briši red 0 = zaglavlje)
+  if (currentTotalRows > targetTotalRows) {
+    table.load("rows/items");
+    await ctx.sync();
+    for (let i = currentTotalRows - 1; i >= targetTotalRows; i--) {
+      if (table.rows.items[i]) table.rows.items[i].delete();
+    }
+    await ctx.sync();
+    log(`     Obrisano ${currentTotalRows - targetTotalRows} viška redova`, "ok");
+  }
+
+  log(`     ✅ Tabela ažurirana → ${targetDataRows} redova podataka`, "ok");
+}
+
+// ============================================
+// INSPECT
+// ============================================
+document.getElementById("btnInspect").onclick = async () => {
+  log("▶ Inspect...");
+  setLoading(true);
+  try {
+    await Word.run(async (ctx) => {
+      const ccs = ctx.document.contentControls;
+      ccs.load("items/tag,items/title,items/appearance,items/cannotDelete");
+      await ctx.sync();
+
+      log(`  Ukupno CC u dokumentu: ${ccs.items.length}`);
+      ccs.items.forEach((cc, i) => {
+        log(`  [${i}] tag="${cc.tag}" title="${cc.title}" appearance="${cc.appearance}" cannotDelete=${cc.cannotDelete}`);
       });
-    } catch (e) { log("❌ " + e.message, "err"); }
-  };
 
-  document.getElementById("btnLogClear").onclick = () => {
-    document.getElementById("log").innerHTML = "";
-  };
+      // Batch load oba taga u jednom sync-u
+      const ba    = ctx.document.contentControls.getByTag(CC_TAG);
+      const baTbl = ctx.document.contentControls.getByTag(CC_TAG_TBL);
+      ba.load("items");
+      baTbl.load("items");
+      await ctx.sync();
 
-  Office.onReady((info) => {
-    log(`✅ Office.onReady — ${info.host} / ${info.platform}`, "ok");
-    document.getElementById("status").textContent = `✅ Spreman (${info.host} / ${info.platform})`;
-    document.getElementById("status").className = "ready";
-    ["rowCount","btnGenerate","btnClear"].forEach(id => {
-      document.getElementById(id).disabled = false;
+      log(`  Anchor CC "${CC_TAG}": ${ba.items.length}`, ba.items.length > 0 ? "ok" : "warn");
+      log(`  Table CC "${CC_TAG_TBL}": ${baTbl.items.length}`, baTbl.items.length > 0 ? "ok" : "warn");
     });
-  });
+  } catch (e) {
+    log("❌ " + e.message, "err");
+  } finally {
+    setLoading(false);
+  }
+};
+
+// ============================================
+// CLEAR
+// ============================================
+document.getElementById("btnClear").onclick = async () => {
+  setLoading(true);
+  try {
+    await Word.run(async (ctx) => {
+      ctx.document.body.clear();
+      await ctx.sync();
+      log("✅ Dokument očišćen", "ok");
+    });
+  } catch (e) {
+    log("❌ " + e.message, "err");
+  } finally {
+    setLoading(false);
+  }
+};
+
+document.getElementById("btnLogClear").onclick = () => {
+  document.getElementById("log").innerHTML = "";
+};
+
+// ============================================
+// INIT
+// ============================================
+Office.onReady((info) => {
+  log(`✅ Office.onReady — ${info.host} / ${info.platform}`, "ok");
+  document.getElementById("status").textContent = `✅ Spreman (${info.host})`;
+  document.getElementById("status").className = "ready";
+  officeReady = true;
+  setLoading(false);
+});
+
 </script>
 </body>
 </html>
