@@ -133,9 +133,11 @@ document.getElementById("btnInsertMarker").onclick = async () => {
       cc.tag = CC_TAG;
       cc.title = CC_TITLE;
       cc.appearance = Word.ContentControlAppearance.hidden;
+
+      await ctx.sync();
+
       cc.cannotDelete = true;
       cc.cannotEdit = true;
-      cc.insertText("", Word.InsertLocation.replace);
 
       await ctx.sync();
       log(`✅ CC marker ubačen — tag: "${CC_TAG}"`, "ok");
@@ -222,8 +224,10 @@ document.getElementById("btnGenerate").onclick = async () => {
 async function createTable(ctx, anchorCC, data, n) {
   const allRows = [HEADERS, ...data];
   const insertRange = anchorCC.getRange(Word.RangeLocation.after);
-  const newTable = insertRange.insertTable(n + 1, COLS, Word.InsertLocation.start, allRows);
+  const newTable = insertRange.insertTable(n + 1, COLS, Word.InsertLocation.after, allRows);
   newTable.styleBuiltIn = Word.Style.tableGrid;
+
+  await ctx.sync();
 
   // Stilizuj zaglavlje
   const headerRow = newTable.getRow(0);
